@@ -1,0 +1,31 @@
+name: Arenix Generate Protouch Live 2026
+on: {workflow_dispatch: {}}
+permissions: {contents: read}
+jobs:
+  generate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install numpy pandas scikit-learn supabase
+      - uses: actions/download-artifact@v4
+        with:
+          name: arenix-protouch-live-features-2026
+          github-token: ${{ github.token }}
+          run-id: 35917759349
+          path: artifacts
+      - name: Generate frozen live predictions and 64-line coverage
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python src/generate_protouch_live_2026.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arenix-protouch-live-2026
+          path: |
+            artifacts/protouch_live_predictions_2026.csv
+            artifacts/protouch_live_64_lines_2026.csv
+            artifacts/protouch_live_manifest_2026.json
+          retention-days: 30

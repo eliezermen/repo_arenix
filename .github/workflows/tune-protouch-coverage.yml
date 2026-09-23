@@ -1,0 +1,26 @@
+name: Arenix Tune Protouch Coverage 2024
+on: {workflow_dispatch: {}}
+permissions: {actions: read, contents: read}
+jobs:
+  tune:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11", cache: pip}
+      - run: pip install -r requirements.txt
+      - name: Generate normalized 2024 validation probabilities
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python src/train_protouch_multiclass.py
+      - run: python src/tune_protouch_coverage_weights.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arenix-protouch-coverage-weights-2024
+          path: |
+            artifacts/coverage_weights_2024.json
+            artifacts/protouch_oos_2024.csv
+            artifacts/protouch_oos_2025.csv
+          retention-days: 30

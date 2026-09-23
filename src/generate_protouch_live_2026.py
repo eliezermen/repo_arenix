@@ -38,7 +38,7 @@ for _,x in lines.iterrows():
  picks=[x[f"g{i}"] for i in range(1,14)]; jp=float(np.prod([P[i,MP[p]] for i,p in enumerate(picks)]))
  lr.append({"strategy_run_id":run["id"],"line_number":int(x.line),"selections":picks,"probability":jp,"metadata":{"strategy":"1.0.0"}})
 sb.table("pool_strategy_lines").insert(lr).execute()
-sb.table("pool_strategy_runs").update({"preregistered_at":now}).eq("id",run["id"]).execute()
+sb.rpc("seal_pool_strategy_run",{"p_run_id":run["id"],"p_preregistered_at":now}).execute()
 Path("artifacts").mkdir(exist_ok=True);pred.to_csv("artifacts/protouch_live_predictions_2026.csv",index=False);lines.to_csv("artifacts/protouch_live_64_lines_2026.csv",index=False)
 meta={"generated_at":datetime.now(timezone.utc).isoformat(),"strategy":"1.0.0","training_seasons":[2021,2022,2023,2024,2025],"live_holdout":2026,"lines":64,"weights":[1,5,20],"seed":42,"preregistered":True,"note":"No 2026 outcomes used for training or tuning."};Path("artifacts/protouch_live_manifest_2026.json").write_text(json.dumps(meta,indent=2))
 print(pred.to_string(index=False));print("\nPRIMARY:", "-".join(pred.pick));print(json.dumps(meta,indent=2))

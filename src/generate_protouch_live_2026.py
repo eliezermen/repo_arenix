@@ -26,6 +26,19 @@ for _ in range(64):
  gain=M[0][:,~cov[0]].sum(1)+5*M[1][:,~cov[1]].sum(1)+20*M[2][:,~cov[2]].sum(1);gain[~alive]=-1;ix=np.flatnonzero(gain==gain.max());i=int(ix[np.argmax(lp[ix])]);sel.append(C[i]);alive[i]=False
  for k in range(3):cov[k]|=M[k][i]
 lines=pd.DataFrame([[n+1]+list(CL[x]) for n,x in enumerate(sel)],columns=["line"]+[f"g{i}" for i in range(1,14)])
+# Persist immutable preregistration before exporting artifacts.
+now=datetime.now(timezone.utc).isoformat(); cid=str(live.iloc[0]["contest_id"]) if "contest_id" in live.columns else sb.table("protouch_contests").select("id").eq("contest_date","2026-09-26").single().execute().data["id"]
+rows=[]
+for _,x in pred.iterrows():
+ rows.append({"contest_id":cid,"matchup_id":x.matchup_id,"model_name":"Arenix Protouch Multiclass","model_version":"live-1.0.0","p_l":float(x.p_l),"p_d":float(x.p_d),"p_v":float(x.p_v),"pick":x.pick,"generated_at":now,"preregistered_at":now,"metadata":{"training_seasons":[2021,2022,2023,2024,2025],"live_holdout":2026,"strategy":"1.0.0"}})
+sb.table("protouch_model_predictions").insert(rows).execute()
+run=sb.table("pool_strategy_runs").insert({"contest_id":cid,"strategy_version":"1.0.0","budget_lines":64,"objective":"maximize_prize_threshold_coverage","probability_source":"Arenix Protouch Multiclass live-1.0.0","generated_at":now,"metadata":{"weights":[1,5,20],"seed":42,"training_seasons":[2021,2022,2023,2024,2025],"live_holdout":2026}}).execute().data[0]
+lr=[]
+for _,x in lines.iterrows():
+ picks=[x[f"g{i}"] for i in range(1,14)]; jp=float(np.prod([P[i,MP[p]] for i,p in enumerate(picks)]))
+ lr.append({"strategy_run_id":run["id"],"line_number":int(x.line),"selections":picks,"probability":jp,"metadata":{"strategy":"1.0.0"}})
+sb.table("pool_strategy_lines").insert(lr).execute()
+sb.table("pool_strategy_runs").update({"preregistered_at":now}).eq("id",run["id"]).execute()
 Path("artifacts").mkdir(exist_ok=True);pred.to_csv("artifacts/protouch_live_predictions_2026.csv",index=False);lines.to_csv("artifacts/protouch_live_64_lines_2026.csv",index=False)
 meta={"generated_at":datetime.now(timezone.utc).isoformat(),"strategy":"1.0.0","training_seasons":[2021,2022,2023,2024,2025],"live_holdout":2026,"lines":64,"weights":[1,5,20],"seed":42,"preregistered":True,"note":"No 2026 outcomes used for training or tuning."};Path("artifacts/protouch_live_manifest_2026.json").write_text(json.dumps(meta,indent=2))
 print(pred.to_string(index=False));print("\nPRIMARY:", "-".join(pred.pick));print(json.dumps(meta,indent=2))

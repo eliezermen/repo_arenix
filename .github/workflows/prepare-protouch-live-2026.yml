@@ -1,0 +1,30 @@
+name: Arenix Prepare Protouch Live 2026
+on: {workflow_dispatch: {}}
+permissions: {contents: read}
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install numpy pandas supabase
+      - name: Validate frozen strategy and contest
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python src/prepare_protouch_live_2026.py
+      - name: Build leakage-safe live feature snapshot
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python src/build_protouch_live_features.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arenix-protouch-live-features-2026
+          path: |
+            artifacts/protouch_live_2026_preflight.json
+            artifacts/protouch_live_features_2026.csv
+            artifacts/protouch_live_features_2026.json
+          retention-days: 30

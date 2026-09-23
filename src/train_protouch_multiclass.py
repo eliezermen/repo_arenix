@@ -18,7 +18,11 @@ df=pd.DataFrame(rows).sort_values(["season","week","game_id"])
 for c in F: df[c]=pd.to_numeric(df[c])
 df["y"]=df.protouch_result.map(MAP)
 tr=df[df.season.isin([2021,2022,2023])]; va=df[df.season==2024]; fit=df[df.season.isin([2021,2022,2023,2024])]; te=df[df.season==2025]
+def norm(p):
+ p=np.clip(np.asarray(p,dtype=float),1e-12,None)
+ return p/p.sum(axis=1,keepdims=True)
 def met(y,p):
+ p=norm(p)
  pred=p.argmax(1); return {"n":int(len(y)),"accuracy":float(accuracy_score(y,pred)),"log_loss":float(log_loss(y,p,labels=[0,1,2]))}
 def logit(a,b):
  s=StandardScaler().fit(a[F]); m=LogisticRegression(max_iter=3000,C=1.0).fit(s.transform(a[F]),a.y); return m.predict_proba(s.transform(b[F]))

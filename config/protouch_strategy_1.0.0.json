@@ -1,0 +1,61 @@
+{
+  "strategy_version": "1.0.0",
+  "status": "frozen",
+  "frozen_at": "2026-09-23",
+  "target": "NFL Protouch 13-game L/D/V",
+  "rules": {
+    "L": "home margin > 6",
+    "D": "absolute margin <= 6",
+    "V": "away margin > 6"
+  },
+  "model": {
+    "family": "multiclass",
+    "classes": [
+      "L",
+      "D",
+      "V"
+    ],
+    "features": [
+      "diff_off_epa_pp_l4",
+      "diff_def_epa_l4",
+      "diff_yards_per_play_l4",
+      "diff_turnovers_l4",
+      "diff_sacks_l4"
+    ],
+    "training_seasons": [
+      2021,
+      2022,
+      2023,
+      2024,
+      2025
+    ],
+    "live_holdout": [
+      2026
+    ],
+    "note": "Hyperparameters/model family were selected before live 2026. Do not tune using 2026 outcomes."
+  },
+  "coverage": {
+    "weights_ge11_ge12_eq13": [
+      1,
+      5,
+      20
+    ],
+    "weights_selected_on": 2024,
+    "final_test_year": 2025,
+    "budgets": [
+      16,
+      32,
+      64,
+      128
+    ],
+    "default_live_budget": 64,
+    "simulations": 8000,
+    "seed": 42
+  },
+  "integrity": {
+    "no_2026_tuning": true,
+    "preregister_before_event_start": true,
+    "immutable_predictions": true,
+    "actual_results_excluded_from_generation": true
+  }
+}

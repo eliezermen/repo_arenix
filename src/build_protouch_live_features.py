@@ -3,7 +3,10 @@ from pathlib import Path
 from datetime import datetime,timezone
 import pandas as pd,numpy as np
 from supabase import create_client
-ALIASES={"LAR":"LA"}\ndef canon(code): return ALIASES.get(code,code)\nF=["diff_off_epa_pp_l4","diff_def_epa_l4","diff_yards_per_play_l4","diff_turnovers_l4","diff_sacks_l4"]
+ALIASES={"LAR":"LA"}
+def canon(code):
+ return ALIASES.get(code,code)
+F=["diff_off_epa_pp_l4","diff_def_epa_l4","diff_yards_per_play_l4","diff_turnovers_l4","diff_sacks_l4"]
 sb=create_client(os.environ["SUPABASE_URL"],os.environ["SUPABASE_SERVICE_ROLE_KEY"])
 c=sb.table("protouch_contests").select("*").eq("contest_date","2026-09-26").single().execute().data
 g=sb.table("protouch_matchups").select("*").eq("contest_id",c["id"]).order("position").execute().data

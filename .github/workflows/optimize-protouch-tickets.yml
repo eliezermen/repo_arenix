@@ -1,0 +1,24 @@
+name: Arenix Optimize Protouch Tickets
+on:
+  workflow_dispatch:
+jobs:
+  optimize:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install "supabase>=2.10,<3"
+      - name: Build exact ticket plan
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python src/optimize_protouch_tickets.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arenix-protouch-ticket-plan-2026
+          path: |
+            artifacts/protouch_ticket_plan_2026.json
+            artifacts/protouch_ticket_plan_2026.txt
+          retention-days: 30

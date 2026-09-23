@@ -1,0 +1,26 @@
+name: Arenix Backtest Protouch Coverage
+on:
+  workflow_dispatch:
+permissions:
+  actions: read
+  contents: read
+jobs:
+  backtest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: arenix-protouch-multiclass-0.1.0
+          path: artifacts
+          github-token: ${{ github.token }}
+          run-id: 35902768600
+      - uses: actions/setup-python@v5
+        with: {python-version: "3.11"}
+      - run: pip install numpy pandas
+      - run: python src/backtest_protouch_coverage.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arenix-protouch-coverage-backtest-0.1.0
+          path: artifacts/protouch_coverage_backtest.json
+          retention-days: 30

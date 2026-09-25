@@ -1,0 +1,22 @@
+name: Arenix Protouch Reevaluation R1
+on:
+  workflow_dispatch:
+jobs:
+  reevaluate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install "supabase>=2.10,<3"
+      - name: Run R1
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+        run: python src/reevaluate_protouch_r1_2026.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: arenix-protouch-r1-2026
+          path: artifacts/protouch_reevaluation_r1_2026.json
+          retention-days: 30

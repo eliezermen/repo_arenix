@@ -1,4 +1,4 @@
-import io,json,math,os,time,urllib.request,hashlib
+import io,json,math,os,time,urllib.request,hashlib,base64
 from pathlib import Path
 from datetime import datetime,timezone
 import numpy as np,pandas as pd
@@ -15,7 +15,7 @@ SEASONS=[2021,2022,2023,2024,2025,2026]
 TRAIN=[2021,2022,2023]; VAL=[2024]; TEST=[2025]; LIVE_SEASON=2026; LIVE_WEEK=3
 CLASSES=["L1","L2","L3","L4","V1","V2","V3","V4","ST"]
 C2I={c:i for i,c in enumerate(CLASSES)}
-MODEL_VERSION="initial-0.1.0"
+MODEL_VERSION="initial-0.2.0"
 HOME="WAS"; AWAY="SEA"
 FEATURES=[
  "diff_off_epa_pp_l4","diff_def_epa_allowed_l4","diff_yards_per_play_l4",
@@ -92,10 +92,15 @@ pbps=[]
 for y in SEASONS:
     x=load_pbp(y)
     x=x[x.season_type=="REG"].copy()
+    if y==LIVE_SEASON:
+        x=x[pd.to_numeric(x.week,errors="coerce") < LIVE_WEEK].copy()
     pbps.append(x)
 pbp=pd.concat(pbps,ignore_index=True)
 pbp.home_team=pbp.home_team.map(canon); pbp.away_team=pbp.away_team.map(canon)
-print("PBP rows",len(pbp))
+live_weeks=sorted(pd.to_numeric(pbp.loc[pbp.season==LIVE_SEASON,"week"],errors="coerce").dropna().astype(int).unique().tolist())
+if live_weeks and max(live_weeks) >= LIVE_WEEK:
+    raise RuntimeError(f"Leakage guard failed: 2026 PBP includes week {max(live_weeks)} >= live week {LIVE_WEEK}")
+print("PBP rows",len(pbp),"live source weeks",live_weeks)
 
 # Build one record per game and team-history state strictly before current game.
 games=[]
@@ -262,20 +267,48 @@ def metrics(y,p):
             "brier_multiclass":float(np.mean(np.sum((p-one)**2,axis=1))),
             "top3_accuracy":float(np.mean([int(y[i] in top3[i]) for i in range(len(y))]))}
 
-cands={"logistic":pv_log,"xgboost":pv_x,"hierarchical":pv_h,"hazard":pv_z}
-# Select validation ensemble on 2024 only, 0.1 simplex.
+def apply_temp(p,T):
+    p=np.clip(p,1e-12,1.0)
+    z=np.log(p)/float(T)
+    z-=z.max(1,keepdims=True)
+    e=np.exp(z); return e/e.sum(1,keepdims=True)
+
+def fit_temp(p,y):
+    grid=np.arange(0.50,3.001,0.05)
+    vals=[log_loss(y,apply_temp(p,T),labels=list(range(9))) for T in grid]
+    return float(grid[int(np.argmin(vals))])
+
+# 2024 is split chronologically: early weeks calibrate each candidate, later weeks select ensemble weights.
+cal_mask=(va.week<=10).to_numpy()
+sel_mask=(va.week>=11).to_numpy()
+if cal_mask.sum()<60 or sel_mask.sum()<60:
+    raise RuntimeError(f"Insufficient 2024 calibration/selection rows: {cal_mask.sum()}/{sel_mask.sum()}")
+raw_val=[pv_log,pv_x,pv_h,pv_z]; raw_test=[pt_log,pt_x,pt_h,pt_z]
+names=["logistic","xgboost","hierarchical","hazard"]
+temps=np.array([fit_temp(p[cal_mask],yv[cal_mask]) for p in raw_val],float)
+cal_val=[apply_temp(raw_val[i],temps[i]) for i in range(4)]
+cal_test=[apply_temp(raw_test[i],temps[i]) for i in range(4)]
+calibration_report={
+ names[i]:{
+  "temperature":float(temps[i]),
+  "n":int(cal_mask.sum()),
+  "raw_log_loss":float(log_loss(yv[cal_mask],raw_val[i][cal_mask],labels=list(range(9)))),
+  "calibrated_log_loss":float(log_loss(yv[cal_mask],cal_val[i][cal_mask],labels=list(range(9))))
+ } for i in range(4)
+}
+# Ensemble weights are selected only on the later 2024 slice, after temperatures are frozen.
 best=None
 for a in range(11):
  for b in range(11-a):
   for c in range(11-a-b):
    d=10-a-b-c
    w=np.array([a,b,c,d],float)/10
-   p=w[0]*pv_log+w[1]*pv_x+w[2]*pv_h+w[3]*pv_z
-   ll=log_loss(yv,p,labels=list(range(9)))
-   if best is None or ll<best[0]:best=(ll,w)
-weights=best[1]; names=["logistic","xgboost","hierarchical","hazard"]
-pv=sum(weights[i]*[pv_log,pv_x,pv_h,pv_z][i] for i in range(4))
-pt=sum(weights[i]*[pt_log,pt_x,pt_h,pt_z][i] for i in range(4))
+   p=sum(w[i]*cal_val[i][sel_mask] for i in range(4))
+   ll=log_loss(yv[sel_mask],p,labels=list(range(9)))
+   if best is None or ll<best[0]: best=(ll,w)
+weights=best[1]
+pv=sum(weights[i]*cal_val[i] for i in range(4))
+pt=sum(weights[i]*cal_test[i] for i in range(4))
 
 # Refit candidates on 2021-2025 for live inference, preserving 2024-selected ensemble weights.
 rf=hist.copy()
@@ -309,11 +342,14 @@ lf=live[FEATURES].copy()
 for qi,q in enumerate(range(1,5)):
  xx=lf.copy();xx["qtr"]=q;hh=hz.predict_proba(xx)[:,1];qp[:,qi]=surv*hh;surv*=1-hh
 ps=ms.predict_proba(Z)[:,1];phaz=np.zeros((1,9));phaz[:,:4]=qp*(1-ps[:,None]);phaz[:,4:8]=qp*ps[:,None];phaz[:,8]=surv;phaz/=phaz.sum(1,keepdims=True)
-parts=[plog,px,phier,phaz];livep=sum(weights[i]*parts[i] for i in range(4));livep=np.clip(livep,1e-9,None);livep/=livep.sum(1,keepdims=True)
+parts_raw=[plog,px,phier,phaz]
+parts=[apply_temp(parts_raw[i],temps[i]) for i in range(4)]
+livep=sum(weights[i]*parts[i] for i in range(4));livep=np.clip(livep,1e-9,None);livep/=livep.sum(1,keepdims=True)
 
 perf={}
-for n,pv0,pt0 in [("logistic",pv_log,pt_log),("xgboost",pv_x,pt_x),("hierarchical",pv_h,pt_h),("hazard",pv_z,pt_z),("ensemble",pv,pt)]:
- perf[n]={"validation_2024":metrics(yv,pv0),"test_2025":metrics(yt,pt0)}
+for i,n in enumerate(names):
+ perf[n]={"selection_2024b":metrics(yv[sel_mask],cal_val[i][sel_mask]),"test_2025":metrics(yt,cal_test[i])}
+perf["ensemble"]={"selection_2024b":metrics(yv[sel_mask],pv[sel_mask]),"test_2025":metrics(yt,pt)}
  probs={CLASSES[i]:float(livep[0,i]) for i in range(9)}
 pick=max(probs,key=probs.get)
 top3=sorted(probs.items(),key=lambda kv:kv[1],reverse=True)[:3]
@@ -321,25 +357,45 @@ entropy=float(-sum(p*math.log(p) for p in probs.values()))
 manifest={
  "model_version":MODEL_VERSION,"generated_at":datetime.now(timezone.utc).isoformat(),
  "target":"Protouch Initial 9-class","classes":CLASSES,
- "protocol":{"train":[2021,2022,2023],"validation":[2024],"final_test":[2025],"live_holdout":[2026],"minimum_prior_games":2},
- "features":FEATURES,"ensemble_weights":dict(zip(names,[float(x) for x in weights])),
+ "protocol":{"train":[2021,2022,2023],"calibration_2024a":{"season":2024,"weeks":"<=10"},"ensemble_selection_2024b":{"season":2024,"weeks":">=11"},"final_test":[2025],"live_holdout":[2026],"minimum_prior_games":2},
+ "features":FEATURES,"calibration_temperatures":dict(zip(names,[float(x) for x in temps])),"calibration_report":calibration_report,
+ "ensemble_weights":dict(zip(names,[float(x) for x in weights])),
  "performance":perf,"live":{"season":2026,"week":3,"home":HOME,"away":AWAY,"probabilities":probs,"pick":pick,"top3":top3,"entropy":entropy,
  "market":{"provider_event_id":eid,"home_spread":float(live.home_spread.iloc[0]),"total_line":float(live.total_line.iloc[0])}},
- "integrity":{"no_2026_outcomes_in_training":True,"live_features_use_only_prior_games":True,"prediction_preregistered":True}
+ "integrity":{"no_2026_outcomes_in_training":True,"live_features_use_only_prior_games":True,"strict_live_week_guard":True,"live_source_weeks":live_weeks,"prediction_preregistered":True,"permanent_artifact_required":True}
 }
 Path("artifacts").mkdir(exist_ok=True)
-Path("artifacts/protouch_initial_manifest_0.1.0.json").write_text(json.dumps(manifest,indent=2))
+Path("artifacts/protouch_initial_manifest_0.2.0.json").write_text(json.dumps(manifest,indent=2))
 pd.DataFrame([{"class":c,"probability":probs[c]} for c in CLASSES]).to_csv("artifacts/protouch_initial_live_probs_2026.csv",index=False)
+artifact_path=Path("artifacts/protouch_initial_models_0.2.0.joblib")
 joblib.dump({"scaler":scr,"logistic":lr,"xgboost":xr,"hier_has":mh,"hier_side":ms,"hier_q_home":mqh,"hier_q_away":mqa,"hazard":hz,
-             "features":FEATURES,"classes":CLASSES,"weights":weights}, "artifacts/protouch_initial_models_0.1.0.joblib")
+             "features":FEATURES,"classes":CLASSES,"weights":weights,"temperatures":temps,
+             "model_version":MODEL_VERSION,"protocol":manifest["protocol"]}, artifact_path)
+
+# Permanent, immutable Supabase persistence with checksum and read-back verification.
+blob=artifact_path.read_bytes(); checksum=hashlib.sha256(blob).hexdigest(); chunk_size=120000
+chunks=[blob[i:i+chunk_size] for i in range(0,len(blob),chunk_size)]
+header={"model_version":MODEL_VERSION,"artifact_name":artifact_path.name,"checksum_sha256":checksum,
+        "size_bytes":len(blob),"chunk_size_bytes":chunk_size,"total_chunks":len(chunks),
+        "manifest":{"features":FEATURES,"classes":CLASSES,"weights":manifest["ensemble_weights"],
+                    "temperatures":manifest["calibration_temperatures"],"protocol":manifest["protocol"]}}
+payload=[{"chunk_no":i,"payload_base64":base64.b64encode(ch).decode()} for i,ch in enumerate(chunks)]
+artifact_id=sb.rpc("record_protouch_initial_artifact",{"p_header":header,"p_chunks":payload}).execute().data
+saved=sb.table("protouch_initial_artifact_chunks").select("chunk_no,payload_base64").eq("artifact_id",artifact_id).order("chunk_no").execute().data
+rebuilt=b"".join(base64.b64decode(z["payload_base64"]) for z in saved)
+if hashlib.sha256(rebuilt).hexdigest()!=checksum or rebuilt!=blob:
+    raise RuntimeError("Permanent artifact checksum verification failed")
+manifest["artifact"]={"artifact_id":artifact_id,"artifact_name":artifact_path.name,"checksum_sha256":checksum,
+                      "size_bytes":len(blob),"total_chunks":len(chunks),"permanent_supabase":True}
+Path("artifacts/protouch_initial_manifest_0.2.0.json").write_text(json.dumps(manifest,indent=2))
 
 # persist OOS metrics
 for model,z in perf.items():
  for split,mm in z.items():
-  seasons=[2024] if split=="validation_2024" else [2025]
+  seasons=[2024] if split=="selection_2024b" else [2025]
   row={"model_version":MODEL_VERSION,"model_name":model,"split_name":split,"seasons":seasons,"sample_size":mm["n"],
        "accuracy":mm["accuracy"],"log_loss":mm["log_loss"],"brier_multiclass":mm["brier_multiclass"],"top3_accuracy":mm["top3_accuracy"],
-       "metrics":{"ensemble_weights":manifest["ensemble_weights"] if model=="ensemble" else {}}}
+       "metrics":{"ensemble_weights":manifest["ensemble_weights"] if model=="ensemble" else {},"temperature":manifest["calibration_temperatures"].get(model)}}
   sb.table("protouch_initial_model_performance").upsert(row,on_conflict="model_version,model_name,split_name").execute()
 
 contest=sb.table("protouch_contests").select("id").eq("contest_date","2026-09-26").single().execute().data
@@ -347,7 +403,7 @@ now=manifest["generated_at"]
 row={"contest_id":contest["id"],"home_team_code":HOME,"away_team_code":AWAY,"model_name":"Arenix Protouch Initial Ensemble",
      "model_version":MODEL_VERSION,"probabilities":probs,"pick":pick,"generated_at":now,"preregistered_at":now,
      "metadata":{"top3":top3,"entropy":entropy,"ensemble_weights":manifest["ensemble_weights"],"protocol":manifest["protocol"],"features":FEATURES,
-                 "market":manifest["live"]["market"],"note":"2026 outcomes excluded from training/tuning."}}
+                 "market":manifest["live"]["market"],"artifact":manifest["artifact"],"calibration_temperatures":manifest["calibration_temperatures"],"note":"2026 outcomes excluded from training/tuning; live PBP restricted to weeks < live week."}}
 sb.table("protouch_initial_predictions").insert(row).execute()
 print(json.dumps({"pick":pick,"top3":top3,"weights":manifest["ensemble_weights"],
-                  "validation":perf["ensemble"]["validation_2024"],"test":perf["ensemble"]["test_2025"]},indent=2))
+                  "selection_2024b":perf["ensemble"]["selection_2024b"],"test":perf["ensemble"]["test_2025"]},indent=2))

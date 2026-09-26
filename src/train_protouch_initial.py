@@ -350,7 +350,7 @@ perf={}
 for i,n in enumerate(names):
  perf[n]={"selection_2024b":metrics(yv[sel_mask],cal_val[i][sel_mask]),"test_2025":metrics(yt,cal_test[i])}
 perf["ensemble"]={"selection_2024b":metrics(yv[sel_mask],pv[sel_mask]),"test_2025":metrics(yt,pt)}
- probs={CLASSES[i]:float(livep[0,i]) for i in range(9)}
+probs={CLASSES[i]:float(livep[0,i]) for i in range(9)}
 pick=max(probs,key=probs.get)
 top3=sorted(probs.items(),key=lambda kv:kv[1],reverse=True)[:3]
 entropy=float(-sum(p*math.log(p) for p in probs.values()))

@@ -1,10 +1,6 @@
 name: Arenix Protouch Initial
 on:
   workflow_dispatch:
-  push:
-    paths:
-      - 'src/train_protouch_initial.py'
-      - '.github/workflows/train-protouch-initial.yml'
 jobs:
   train:
     runs-on: ubuntu-latest
@@ -23,7 +19,7 @@ jobs:
         run: python src/train_protouch_initial.py
       - uses: actions/upload-artifact@v4
         with:
-          name: arenix-protouch-initial-0.1.0
+          name: arenix-protouch-initial-0.2.0
           path: |
             artifacts/protouch_initial_manifest_0.1.0.json
             artifacts/protouch_initial_live_probs_2026.csv

@@ -160,9 +160,31 @@ current_spread=float(np.median(hs)) if hs else np.nan
 raw=sb.table("odds_snapshots_raw").select("point,captured_at").eq("provider_event_id",eid).eq("market_key","totals").eq("outcome_name","Over").order("captured_at",desc=True).limit(20).execute().data if eid else []
 current_total=float(np.median([float(z["point"]) for z in raw if z.get("point") is not None])) if raw else np.nan
 
-live=df[(df.season==LIVE_SEASON)&(df.week==LIVE_WEEK)&(df.home==HOME)&(df.away==AWAY)].copy()
-if len(live)!=1: raise RuntimeError(f"Expected one live {AWAY}@{HOME} week {LIVE_WEEK} row, found {len(live)}")
-live.loc[:,"home_spread"]=current_spread; live.loc[:,"total_line"]=current_total
+# Build future live row strictly from completed 2026 team histories; PBP has no row for an unplayed game.
+def live_roll(t,key,n):
+    z=[r[key] for r in team_hist.get((LIVE_SEASON,t),[])[-n:]]
+    return float(np.mean(z)) if z else np.nan
+if len(team_hist.get((LIVE_SEASON,HOME),[]))<2 or len(team_hist.get((LIVE_SEASON,AWAY),[]))<2:
+    raise RuntimeError(f"Need at least two completed 2026 games for {HOME}/{AWAY}")
+live_row={"season":LIVE_SEASON,"week":LIVE_WEEK,"game_id":"LIVE_WAS_SEA","home":HOME,"away":AWAY,
+          "home_prior_games":len(team_hist[(LIVE_SEASON,HOME)]),"away_prior_games":len(team_hist[(LIVE_SEASON,AWAY)])}
+spec=[
+  ("off_epa_pp",4,"diff_off_epa_pp_l4"),
+  ("def_epa_allowed",4,"diff_def_epa_allowed_l4"),
+  ("yards_per_play",4,"diff_yards_per_play_l4"),
+  ("turnovers",4,"diff_turnovers_l4"),
+  ("sacks_suffered",4,"diff_sacks_suffered_l4"),
+  ("first_td_for",5,"diff_first_td_for_rate_l5"),
+  ("first_td_against",5,"diff_first_td_against_rate_l5"),
+  ("first_td_q1",5,"diff_first_td_q1_rate_l5"),
+  ("td_for",4,"diff_td_per_game_l4"),
+  ("td_allowed",4,"diff_td_allowed_per_game_l4"),
+  ("first_drive_td",5,"diff_first_drive_td_rate_l5")
+]
+for key,n,name in spec: live_row[name]=live_roll(HOME,key,n)-live_roll(AWAY,key,n)
+live_row["home_spread"]=current_spread; live_row["total_line"]=current_total
+live=pd.DataFrame([live_row])
+if live[baseF].isna().any().any(): raise RuntimeError("Live pregame football features are incomplete")
 
 hist=df[df.season.isin([2021,2022,2023,2024,2025])].copy()
 tr=hist[hist.season.isin(TRAIN)].copy(); va=hist[hist.season.isin(VAL)].copy(); te=hist[hist.season.isin(TEST)].copy()

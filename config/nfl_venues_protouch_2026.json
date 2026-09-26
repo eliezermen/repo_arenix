@@ -1,0 +1,80 @@
+{
+  "BUF": {
+    "name": "Highmark Stadium",
+    "latitude": 42.7738,
+    "longitude": -78.7868,
+    "roof": "outdoor"
+  },
+  "CLE": {
+    "name": "Huntington Bank Field",
+    "latitude": 41.5061,
+    "longitude": -81.6995,
+    "roof": "outdoor"
+  },
+  "IND": {
+    "name": "Lucas Oil Stadium",
+    "latitude": 39.7601,
+    "longitude": -86.1639,
+    "roof": "retractable"
+  },
+  "JAX": {
+    "name": "EverBank Stadium",
+    "latitude": 30.3239,
+    "longitude": -81.6373,
+    "roof": "outdoor"
+  },
+  "MIA": {
+    "name": "Hard Rock Stadium",
+    "latitude": 25.958,
+    "longitude": -80.2389,
+    "roof": "outdoor"
+  },
+  "PIT": {
+    "name": "Acrisure Stadium",
+    "latitude": 40.4468,
+    "longitude": -80.0158,
+    "roof": "outdoor"
+  },
+  "WAS": {
+    "name": "Northwest Stadium",
+    "latitude": 38.9076,
+    "longitude": -76.8645,
+    "roof": "outdoor"
+  },
+  "SF": {
+    "name": "Levi's Stadium",
+    "latitude": 37.403,
+    "longitude": -121.9698,
+    "roof": "outdoor"
+  },
+  "TB": {
+    "name": "Raymond James Stadium",
+    "latitude": 27.9759,
+    "longitude": -82.5033,
+    "roof": "outdoor"
+  },
+  "NO": {
+    "name": "Caesars Superdome",
+    "latitude": 29.9511,
+    "longitude": -90.0812,
+    "roof": "indoor"
+  },
+  "DAL": {
+    "name": "AT&T Stadium",
+    "latitude": 32.7473,
+    "longitude": -97.0945,
+    "roof": "retractable"
+  },
+  "DEN": {
+    "name": "Empower Field at Mile High",
+    "latitude": 39.7439,
+    "longitude": -105.0201,
+    "roof": "outdoor"
+  },
+  "CHI": {
+    "name": "Soldier Field",
+    "latitude": 41.8623,
+    "longitude": -87.6167,
+    "roof": "outdoor"
+  }
+}

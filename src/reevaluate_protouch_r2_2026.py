@@ -4,7 +4,7 @@ injury reports, Open-Meteo forecast. The gate may escalate WATCH/REGENERATE,
 but does NOT invent direct P(L/D/V) adjustments before those effects are
 historically validated.
 """
-import csv, io, json, math, os, statistics, urllib.parse, urllib.request
+import csv, io, json, math, os, statistics, urllib.parse, urllib.request, time
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
 from supabase import create_client
@@ -31,10 +31,17 @@ POS_WEIGHT={"QB":4.0,"LT":1.6,"RT":1.6,"T":1.5,"OT":1.5,"C":1.3,"G":1.2,"OL":1.2
 "WR":1.0,"RB":1.0,"TE":1.0,"CB":1.0,"DB":1.0,"S":1.0,"FS":1.0,"SS":1.0,
 "DE":1.0,"EDGE":1.1,"DL":0.9,"DT":0.9,"LB":1.0,"K":0.4,"P":0.3}
 
-def fetch_json(url):
-    req=urllib.request.Request(url,headers={"User-Agent":"Arenix/1.0"})
-    with urllib.request.urlopen(req,timeout=30) as r:
-        return json.loads(r.read().decode())
+def fetch_json(url, attempts=3):
+    err=None
+    for n in range(attempts):
+        try:
+            req=urllib.request.Request(url,headers={"User-Agent":"Arenix/1.0"})
+            with urllib.request.urlopen(req,timeout=15) as r:
+                return json.loads(r.read().decode())
+        except Exception as e:
+            err=e
+            if n+1<attempts: time.sleep(2*(n+1))
+    raise err
 
 def fetch_text(url):
     req=urllib.request.Request(url,headers={"User-Agent":"Arenix/1.0"})
@@ -108,7 +115,10 @@ def weather_for(venue,commence):
     params={"latitude":venue["latitude"],"longitude":venue["longitude"],
             "hourly":"temperature_2m,precipitation_probability,wind_speed_10m,wind_gusts_10m",
             "temperature_unit":"fahrenheit","wind_speed_unit":"mph","timezone":"UTC","forecast_days":7}
-    data=fetch_json(OPEN_METEO_URL+"?"+urllib.parse.urlencode(params))
+    try:
+        data=fetch_json(OPEN_METEO_URL+"?"+urllib.parse.urlencode(params))
+    except Exception as e:
+        return {"available":False,"roof":venue["roof"],"venue":venue["name"],"reason":"weather_provider_unavailable","error_type":type(e).__name__}
     times=[datetime.fromisoformat(x).replace(tzinfo=timezone.utc) for x in data["hourly"]["time"]]
     target=datetime.fromisoformat(commence.replace("Z","+00:00"))
     i=min(range(len(times)),key=lambda j:abs((times[j]-target).total_seconds()))
@@ -194,6 +204,8 @@ for m in matchups:
             if "out" in rs or "doubt" in rs: gate=add_reason(gate,reasons,"REGENERATE",f"{side}_qb_{rs or 'high_impact'}")
             else: gate=add_reason(gate,reasons,"WATCH",f"{side}_qb_questionable_or_dnp")
         if z["score"]>=4.0: gate=add_reason(gate,reasons,"WATCH",f"{side}_injury_load_{z['score']:.2f}")
+    if not wx.get("available"):
+        gate=add_reason(gate,reasons,"WATCH","weather_data_unavailable")
     if wx.get("available") and wx.get("roof")!="indoor":
         wind=wx.get("wind_mph") or 0; gust=wx.get("gust_mph") or 0; pp=wx.get("precip_probability") or 0
         if wind>=25 or gust>=40:
